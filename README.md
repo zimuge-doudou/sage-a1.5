@@ -33,12 +33,15 @@ Measured 2026-10-23 on a MacBook Pro M4 Pro / 64 GB, `llama.cpp`, `temp=0.4`,
 | Test | Result |
 | --- | --- |
 | Refusal probe, 5 policy-adjacent prompts | **0 / 5 refusals** (same set: base with no edit → 2 / 5) |
+| Chained shell-tool task, 4 dependent steps | **4 / 4** (model picks commands, reads output, self-terminates) |
+| Multi-turn state chain, 6 dependent turns | **6 / 6** |
 | Coding smoke bench, executed rather than string-matched | **3 / 3 pass** |
-| Decode speed, Q4_K_M, M4 Pro, single stream | **~50 tok/s** |
+| Decode speed, Q4_K_M, M4 Pro, single stream | **46.5 tok/s** (Qwen3.8-27B dense, same box: 6.4 → **~7×**) |
 | OpenAI-style `tools` / function calling | **supported** (`finish_reason=tool_calls`) |
 | Merge integrity | 15 / 15 part SHA-256 values match the source file |
 
 Per-prompt detail and method: [`docs/verification.md`](docs/verification.md).
+Same-machine A/B against Qwen3.8-27B, harness and caveats: [`docs/benchmarks.md`](docs/benchmarks.md).
 Earlier benchmark notes: [`docs/eval.md`](docs/eval.md).
 
 ## Download

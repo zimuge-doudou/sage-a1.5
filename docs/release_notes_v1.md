@@ -41,7 +41,9 @@ degrades output.
 - Refusal probe (5 policy-adjacent prompts): **0 / 5 refusals** — same prompts, base weights without
   the edit: **2 / 5**
 - Coding smoke bench, code executed rather than pattern-matched: **3 / 3 pass**
-- Decode: **~50 tok/s**, M4 Pro / 64 GB, single stream, Q4_K_M
+- Decode: **46.5 tok/s**, M4 Pro / 64 GB, single stream, Q4_K_M — same machine and same session,
+  Qwen3.8-27B (dense) decodes at **6.4 tok/s** (≈7×)
+- Chained shell-tool task, 4 dependent steps: **4 / 4**; 6-turn state chain: **6 / 6**
 - Function calling: OpenAI-style `tools` supported
 
 These are our smoke tests on one machine, not a benchmark submission.
