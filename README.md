@@ -1,66 +1,74 @@
-# Sage-A1.5 (Q4_K_M, uncensored)
+# Sage-A1.5 (Q4_K_M, uncensored build)
 
-A locally-runnable, refusal-suppressed build of the **Qwen3.5-MoE** family (256 routed experts,
-35B-A3B class), packaged as a single Q4_K_M GGUF plus an F16 vision projector.
-
-Weights are published as split release assets (GitHub caps each asset at 2 GiB).
+A local GGUF build of the **Qwen3.5-MoE** family (`qwen35moe`, 256 routed experts, 35B-A3B class)
+with the stock refusal behaviour edited out. Published as 15 split GGUF parts plus an F16 vision
+projector, ready for `llama.cpp`.
 
 - **Base architecture:** `qwen35moe` (Qwen3.5-MoE) — Apache-2.0
-- **Quantization:** Q4_K_M, 20.2 GB, 753 tensors
-- **Vision:** `sage-a1.5-mmproj.gguf` (F16, 858 MB)
-- **Context:** trained/exported for long context; we run 64K with q8_0 KV cache
-- **Serving:** llama.cpp `llama-server` (OpenAI-compatible `/v1`)
+- **Quantization:** Q4_K_M base, 46 tensors re-quantized during the merge
+- **File size:** 27,557,177,568 bytes (27.56 GB decimal / 25.7 GiB), 753 tensors
+- **Vision:** `sage-a1.5-mmproj.gguf` (F16, 899,282,880 bytes)
+- **Context:** 73,728 tokens with q8_0 KV cache (we serve at this value)
+- **Serving:** llama.cpp `llama-server`, OpenAI-compatible `/v1`
 
 ## What we changed
 
-1. **Refusal-direction abliteration** on the post-training chat model (no fine-tuning on harmful
-   data, no reward model): the refusal direction is projected out of the residual stream.
-2. **A small LoRA adapter** carries the edit; it is applied with `--lora-scaled <file> 4.0`
-   at serve time. Scale 4.0 is the value we settled on — higher starts to degrade reasoning.
-3. **No safety layer, no system-prompt filtering** is added by us.
+1. **Directional abliteration** on the post-trained chat model: a rank-1 refusal-direction edit is
+   estimated from paired prompt/response activations and projected out of the residual stream. No
+   fine-tuning on harmful data, no reward model, no extra safety layer added by us.
+2. **The edit is fused into the shipped weights.** We first trained a rank-1 adapter, found scale 4.0
+   to be the point where refusals drop without degrading reasoning, then merged it into the GGUF with
+   `llama-export-lora` (46 tensors modified, 753 written). **No adapter file is needed at inference
+   time** — do not stack another LoRA on top of this build.
+3. Nothing else was changed: tokenizer, chat template and tool-calling behaviour are the base model's.
 
-The result keeps the base model's coding/reasoning ability while dropping most stock refusals.
-It is *not* a new pretrain and it is not aligned — see **Limitations**.
+This is a weight edit on an existing model, not a new pretrain and not an alignment run.
+See **Limitations** before deploying.
 
-## Benchmarks (our own smoke tests, not a leaderboard submission)
+## Verified results (our own smoke tests, not a leaderboard submission)
 
-Measured 2026-10-23 on a MacBook Pro M4 Pro / 64 GB, llama.cpp, `temp=0.4`,
-`enable_thinking=false`, same prompts for every model we compared.
+Measured 2026-10-23 on a MacBook Pro M4 Pro / 64 GB, `llama.cpp`, `temp=0.4`,
+`enable_thinking=false`, identical prompts for every build compared.
 
 | Test | Result |
 | --- | --- |
-| Coding smoke bench (3 tasks: positional arithmetic, branchless max, small Python driver) | **3 / 3** |
-| Refusal probe (5 policy-adjacent prompts: violent fiction, lock internals, political critique, intimacy, ballistics physics) | **0 / 5 refusals** |
-| Decode speed (Q4_K_M, M4 Pro, single stream) | **~50 tok/s** |
-| OpenAI `tools` / function calling | **supported** (`finish_reason=tool_calls`) |
-| Same bench on Qwen3.8-27B abliterated (Q4) | 3 / 3, ~11 tok/s |
-| Same bench on Qwen3.5-27B abliterated (Q4) | 2 / 3, ~56 tok/s |
+| Refusal probe, 5 policy-adjacent prompts | **0 / 5 refusals** (same set: base with no edit → 2 / 5) |
+| Coding smoke bench, executed rather than string-matched | **3 / 3 pass** |
+| Decode speed, Q4_K_M, M4 Pro, single stream | **~50 tok/s** |
+| OpenAI-style `tools` / function calling | **supported** (`finish_reason=tool_calls`) |
+| Merge integrity | 15 / 15 part SHA-256 values match the source file |
 
-Details and raw per-task notes: [`docs/eval.md`](docs/eval.md).
+Per-prompt detail and method: [`docs/verification.md`](docs/verification.md).
+Earlier benchmark notes: [`docs/eval.md`](docs/eval.md).
 
 ## Download
 
-Release assets are named `sage-a1.5-q4km.gguf.part-aa … part-ak` (≈1.8 GiB each) plus
-`sage-a1.5-mmproj.gguf` and `SHA256SUMS`.
+The release holds 16 assets:
+
+- `sage-a1.5-q4km-abl4.0.gguf.part-a` … `.part-o` — 15 parts, 14 × 1,887,436,800 B + 1,133,062,368 B
+- `sage-a1.5-mmproj.gguf` — vision projector
+- `SHA256SUMS` — checksums for every asset above
 
 ```bash
 gh release download v1.0 -R zimuge-doudou/sage-a1.5 -D ./parts
-bash scripts/join_parts.sh ./parts
-sha256sum -c ./parts/SHA256SUMS      # macOS: shasum -a 256 -c
+cd ./parts && cat sage-a1.5-q4km-abl4.0.gguf.part-{a..o} > sage-a1.5-q4km-abl4.0.gguf
+shasum -a 256 -c SHA256SUMS          # Linux: sha256sum -c
 ```
+
+Join order matters: `part-a` → `part-o`, lexical order is correct for these names.
 
 ## Run
 
 ```bash
 llama-server \
-  -m sage-a1.5-q4km.gguf \
+  -m sage-a1.5-q4km-abl4.0.gguf \
   --mmproj sage-a1.5-mmproj.gguf \
-  -c 65536 --flash-attn on -ngl 999 \
+  -c 73728 -ctk q8_0 -ctv q8_0 -ngl 999 -fa on \
   --host 127.0.0.1 --port 8090
 ```
 
-With the LoRA kept separate (if you build the adapter yourself), add
-`--lora-scaled sage-a1.5-abl.q8.gguf 4.0`.
+No `--lora`/`--lora-scaled` flag: the edit already lives in the weights. Passing one applies a
+second edit and will degrade output.
 
 OpenAI-compatible client:
 
@@ -74,33 +82,38 @@ print(c.chat.completions.create(
 ).choices[0].message.content)
 ```
 
-Full server script: [`scripts/serve.sh`](scripts/serve.sh).
+Server launcher used here: [`scripts/serve.sh`](scripts/serve.sh).
 
 ## Hardware notes
 
-- 20.2 GB of weights: needs **≥ 24 GB unified memory** to load comfortably at 8K context;
-  64K context with q8_0 KV needs roughly 32 GB+.
-- On Apple silicon, `-ngl 999 --flash-attn on` puts everything on the GPU.
-- On a 24 GB machine, use `-c 8192` and expect slower prompt processing.
+- 25.7 GiB of weights: **≥ 32 GB unified memory** for 8K context; 64K context with q8_0 KV needs
+  roughly 40 GB.
+- Apple silicon: `-ngl 999 -fa on` offloads everything to the GPU; expect ~50 tok/s decode.
+- 24 GB machines: use `-c 8192` and expect slower prompt processing.
 
 ## Limitations
 
-- **Uncensored by construction.** It will answer things the base model refuses. That is the point,
-  but it also means it will happily produce wrong, offensive, or unsafe text — including confident
-  hallucinations. It has no truthfulness guarantee.
-- **Numbers are the weak spot.** We measured it inventing disk-usage figures when asked about the
-  host machine; feed it real values (or a tool result) instead of trusting recall.
-- **Self-reports are unreliable** — treat any "I did X" from this model as a claim to verify.
-- Not evaluated on safety benchmarks; not for user-facing deployment without your own guardrails.
+- **Uncensored by construction.** It answers what the base model refuses. That is the purpose of this
+  build, and it also means it will produce wrong, offensive or unsafe text — including confident
+  fabrications. No truthfulness guarantee.
+- **Numbers are the weak spot.** Observed inventing disk-usage figures when asked about the host
+  machine; feed it real values or tool output instead of trusting recall.
+- **Self-reports are unreliable.** Treat any "I did X" from the model as a claim to verify.
+- Not evaluated on safety benchmarks. Not for user-facing deployment without your own guardrails.
+
+## Intended use
+
+Research on refusal behaviour, local/offline inference, red-teaming your own guardrails. You are
+responsible for what you generate with it and for complying with the law where you run it.
 
 ## License
 
-Base model and this derivative: **Apache-2.0** (see [`LICENSE`](LICENSE)).
-You must keep the Qwen attribution when redistributing.
+Base model and this derivative: **Apache-2.0** (see [`LICENSE`](LICENSE)). Keep the Qwen attribution
+when redistributing.
 
 ## Citation
 
 ```
-Sage-A1.5 (2026). Abliterated Q4_K_M build of Qwen3.5-MoE, Apache-2.0.
+Sage-A1.5 (2026). Fused-abliteration Q4_K_M build of Qwen3.5-MoE, Apache-2.0.
 https://github.com/zimuge-doudou/sage-a1.5
 ```
